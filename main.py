@@ -157,6 +157,7 @@ def main():
     tracking_enabled = True
     zoom = config.ZOOM_DEFAULT
     follow = SmoothFollow()
+    follow_pitch = SmoothFollow()
     last_time = time.time()
 
     while running:
@@ -168,6 +169,7 @@ def main():
         if 'recenter' in triggered and tracker:
             tracker.recenter()
             follow.reset()
+            follow_pitch.reset()
             print("  Recentered!")
         if 'toggle_tracking' in triggered:
             tracking_enabled = not tracking_enabled
@@ -189,6 +191,10 @@ def main():
             zoom = config.ZOOM_DEFAULT
         if 'toggle_pitch' in triggered:
             config.PITCH_ENABLED = not config.PITCH_ENABLED
+            if config.PITCH_ENABLED and tracker:
+                # Avoid snapping to a stale reference from before it was off
+                _, raw_pitch_now, _ = tracker.get_orientation()
+                follow_pitch.reset(raw_pitch_now)
             print(f"  Pitch: {'ON' if config.PITCH_ENABLED else 'OFF'}")
 
         # ── Add virtual displays ──
@@ -228,7 +234,10 @@ def main():
             else:
                 gyro_mag = 0.0
             yaw = follow.update(raw_yaw, dt_ms, gyro_mag)
-            pitch = raw_pitch if config.PITCH_ENABLED else 0.0
+            # Run pitch through the same still/moving jitter-freeze logic as
+            # yaw — previously pitch was passed straight through raw, which
+            # let breathing/heartbeat/micro-sway show up as vertical jitter.
+            pitch = follow_pitch.update(raw_pitch, dt_ms, gyro_mag) if config.PITCH_ENABLED else 0.0
         else:
             yaw, pitch, roll = 0.0, 0.0, 0.0
 
